@@ -1,0 +1,106 @@
+#!/usr/bin/perl -w
+
+use strict;
+use Nagios::Plugin;
+use LWP::UserAgent;
+use Scalar::Util qw(looks_like_number);
+
+sub print_usage();
+sub print_help();
+
+my $PROGNAME = 'check_jrds_values';
+my $VERSION = '0.10';
+
+my $np = Nagios::Plugin->new(
+  usage => "Usage: %s"
+    . '  -H <hostname> -c <threshold> -w <threshold> '
+    . ' [-t <timeout>]'
+    . ' -J <JRDS ROOT URL> -p <Probe instance name> -d <dsName>'
+    . ' [-i interval] [-f cfFunction]',
+  version => $VERSION,
+  plugin  => $PROGNAME,
+  shortname => uc($PROGNAME),
+  blurb => 'Check a data store value from JRDS',
+  timeout => 10,
+  license => 'BSD licence'
+);
+
+$np->add_arg(
+  spec => 'hostname|H=s',
+  help => '-H, --hostname=<hostname>',
+  required => 1,
+);
+
+$np->add_arg(
+  spec => 'jrdsurl|J=s',
+  help => '-J, --jrdsurl=<JRDS ROOT URL>',
+  required => 1,
+);
+
+$np->add_arg(
+  spec => 'probeinstance|p=s',
+  help => '-p, --probeinstancename=<Probe instance name>',
+  required => 1,
+);
+
+$np->add_arg(
+  spec => 'dsname|d=s',
+  help => '-d, --dsname=<ds name>',
+  required => 1,
+);
+
+$np->add_arg(
+  spec => 'interval|i=i',
+  help => '-i, --interval=<interval (in seconds)>',
+  default => 600,
+  required => 1,
+);
+
+$np->add_arg(
+  spec => 'cffunc|f=s',
+  help => '-f, --cffunction=<consolidation function>',
+  default => 'average',
+  required => 0,
+);
+
+$np->add_arg(
+  spec => 'warning|w=s',
+  help => '-w, --warning=value',
+  required => 1,
+);
+
+$np->add_arg(
+ spec => 'critical|c=s',
+ help => '-c, --critical=value',
+  required => 1,
+);
+
+$np->getopts;
+
+my $hostname = $np->opts->hostname;
+$hostname =~ s/\.prod//;
+my $resturl = sprintf("%s/values/%s/%s/%s/%s/%s", $np->opts->jrdsurl, $hostname, $np->opts->probeinstance, $np->opts->dsname, $np->opts->interval, $np->opts->cffunc);
+
+my $req = HTTP::Request->new(GET =>  $resturl);
+my $ua = LWP::UserAgent->new;
+$ua->agent("nagios check");
+$ua->timeout($np->opts->timeout);
+
+# Check the outcome of the response
+my $res = $ua->request($req);
+if (! $res->is_success) {
+    $np->nagios_exit( UNKNOWN, sprintf("Could not retrieve page because of an HTTP error: %s", $res->status_line) );
+}
+
+my $value =  $res->content;
+if (! looks_like_number($value)) {
+    $np->nagios_exit( CRITICAL, sprintf("invalid value: %s", $value) );
+}
+my $code = $np->check_threshold(check => $value);
+if($code != OK) {
+    $main::message = "Threshold check failed";
+}
+else {
+    $main::message = "Everything's fine"
+}
+$np->nagios_exit( $code, sprintf("%s: %0.2f", $main::message, $value) );
