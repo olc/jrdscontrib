@@ -44,15 +44,15 @@
 # At JRDS side, add the following probe:
 # <probe type="AccessMonitor" label="anonymous">
 #    <arg type="Integer" value="8080" />
-#    <arg type="String" value="/anonymous" />
+#    <arg type="String" value="/myapp_anonymous" />
 # </probe>
 # <probe type="AccessMonitor" label="admin">
 #    <arg type="Integer" value="8081" />
-#    <arg type="String" value="/admin" />
+#    <arg type="String" value="/myapp_admin" />
 # </probe>
 #
 # Remark: the heading slash in front of the application name in the probe declaration
-# (ie: /anonymous) is NOT a typo. It is needed because it relies on an xml over http
+# (ie: /myapp_anonymous) is NOT a typo. It is needed because it relies on an xml over http
 # generic probe which send the string value as a GET parameter.
 #
 # Run the monitor on the server:
