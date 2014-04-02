@@ -1,4 +1,65 @@
 #!/usr/bin/python
+# (c) Fabrice Bacchella
+#
+# Real Time HTTP traffic agent for JRDS
+# See: http://jrds.fr/sourcetype/httpxml/accessmonitor
+#
+#
+# Usage:
+# The configuration file defines the server parameters, the log location and format,
+# and provides some filters which makes possible to select the web applications you want
+# to monitor.
+# The special application "all" is automatically collecting data for every virtual hosts and urls
+# the web server generates logs for.
+#
+# Let imagine we want to monitor the activity of a web application, which
+# has two areas: anonymous and admin. We want to monitor both separately.
+#
+# Here is an accessmon.ini example:
+#
+# [server]
+# port=8888
+# printbad=true
+# pidfile=/var/run/accessmon/accessmon.pid
+#
+# [logfile]
+# path=/var/log/apache2/access.log
+# column.vhost=0
+# column.ip=1
+# column.request=5
+# column.status=6
+# column.timeus=10
+#
+# [application.myapp_anonymous]
+# vhost=www.myapp.*
+# negative=/admin/.*
+#
+# [application.myapp_admin]
+# vhost=www.myapp.*
+# positive=/admin/.*
+#
+# Suggestion for the Apache's LogFormat directive:
+# LogFormat	"%V %h %l %u %t \"%r\" %>s %b \"%{Referer}i\" \"%{User-Agent}i\" %D" combined_vhost
+#
+# At JRDS side, add the following probe:
+# <probe type="AccessMonitor" label="anonymous">
+#    <arg type="Integer" value="8080" />
+#    <arg type="String" value="/anonymous" />
+# </probe>
+# <probe type="AccessMonitor" label="admin">
+#    <arg type="Integer" value="8081" />
+#    <arg type="String" value="/admin" />
+# </probe>
+#
+# Remark: the heading slash in front of the application name in the probe declaration
+# (ie: /anonymous) is NOT a typo. It is needed because it relies on an xml over http
+# generic probe which send the string value as a GET parameter.
+#
+# Run the monitor on the server:
+# :; su - www-data -c '/usr/local/bin/accessmon.py --configfile=/usr/local/etc/accessmon.ini'
+# Note that user which runs that daemon must be able to read the server logs
+#
+
 import time, os
 import sys
 import re
@@ -111,16 +172,19 @@ class Statistics:
 class AccessMonHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         try:
-            vhost =  self.path[1:]
-            if vhost in allstats:
+            applicationName =  self.path[1:]
+            if applicationName == '_default':
+                syslog.syslog(syslog.LOG_INFO, 'ApplicationName _default is deprecated: use all instead')
+                applicationName = 'all'
+            if applicationName in allstats:
                 self.send_response(200, 'OK')
                 self.send_header('Content-type', 'application/xml; charset=utf-8')
                 self.send_header('Connection', 'close')
                 self.end_headers()
-                statsVhost = allstats[vhost]
-                self.wfile.write( statsVhost.dump() )
+                statistics = allstats[applicationName]
+                self.wfile.write( statistics.dump() )
             else:
-                self.send_response(404, 'vhost not found')
+                self.send_response(404, 'Application unknown')
         except Exception, e:
             syslog.syslog(syslog.LOG_ERR, "failure serving HTTP request" % e )
 
@@ -259,7 +323,7 @@ def foreverParse(rewind, printBad, logfilepattern, columns):
 
         #analyze log line only if there is enough column
         if len(loginfos) <= columns['lastcolumn']:
-            doStats(allstats.get('_default'), False, False, True)
+            doStats(allstats.get('all'), False, False, True)
         else:
             status = loginfos[columns.get('status')]
             if not statuscode.search(status):
@@ -291,7 +355,7 @@ def foreverParse(rewind, printBad, logfilepattern, columns):
             else:
                 badLine = True
             
-            doStats(allstats.get('_default'), status, svctime, badLine)
+            doStats(allstats.get('all'), status, svctime, badLine)
             
         if badLine and printBad:
             syslog.syslog(syslog.LOG_NOTICE, "Bad line: %s" % logline )
@@ -391,7 +455,7 @@ def handler(signum, frame):
 lineparser = re.compile(r'(("((\\"|[^"])+)")|(\[([^\]]+)\])|((, |[^ ])+)) *')
 
 statsLock = threading.Lock()
-allstats = { '_default': Statistics()}
+allstats = { 'all': Statistics()}
 filename = 'access_log'
 port = 8080
 printBad = False
