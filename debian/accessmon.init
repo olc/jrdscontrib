@@ -39,8 +39,8 @@ CONFIGFILE=/opt/jrds/etc/accessmon.ini
 do_start()
 {
 	start-stop-daemon --start --quiet --pidfile $PIDFILE --chuid $DAEMONUSER --group $DAEMONGROUP \
-		 --exec $DAEMON -- \
-		--configfile=$CONFIGFILE \
+		--exec $DAEMON -- \
+		--configfile=$CONFIGFILE --pidfile=$PIDFILE \
 		|| return 1
 }
 
